@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 slint = "1.14"
 glow = "0.16"
-crazyradio = { path = "../crazyradio-rs", features = ["async"] }
+crazyradio = { git = "https://github.com/bitcraze/crazyradio-rs.git", branch = "ataffanel/sniffer", features = ["async"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"

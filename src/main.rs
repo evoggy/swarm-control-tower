@@ -546,11 +546,12 @@ fn main() {
                     let show_base_stations = app.get_show_base_stations();
                     let show_axes = app.get_show_axes();
                     let show_grid = app.get_show_grid();
+                    let show_fog = app.get_show_fog();
                     let texture = renderer.render(
                         width, height, yaw, pitch, distance, pan_x, pan_y,
                         &unit_positions, &trail_segments, &takeoff_markers, &goto_history_points,
                         active_area, if show_base_stations { &base_stations } else { &[] },
-                        show_axes, show_grid,
+                        show_axes, show_grid, show_fog,
                         wand_viz.as_ref(),
                     );
 

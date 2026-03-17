@@ -162,6 +162,8 @@ pub struct Scene3DRenderer {
     u_color: glow::UniformLocation,
     u_point_size: glow::UniformLocation,
     u_alpha: glow::UniformLocation,
+    u_eye: glow::UniformLocation,
+    u_fog_enabled: glow::UniformLocation,
     displayed_texture: RenderTexture,
     next_texture: RenderTexture,
 }
@@ -170,9 +172,12 @@ const VERTEX_SHADER: &str = r#"#version 100
 attribute vec3 position;
 uniform mat4 u_mvp;
 uniform float u_point_size;
+uniform vec3 u_eye;
+varying float v_dist;
 void main() {
     gl_Position = u_mvp * vec4(position, 1.0);
     gl_PointSize = u_point_size;
+    v_dist = length(position - u_eye);
 }
 "#;
 
@@ -180,8 +185,16 @@ const FRAGMENT_SHADER: &str = r#"#version 100
 precision mediump float;
 uniform vec3 u_color;
 uniform float u_alpha;
+uniform float u_fog_enabled;
+varying float v_dist;
+const vec3 FOG_COLOR = vec3(0.12, 0.12, 0.15);
+const float FOG_START = 1.0;
+const float FOG_END = 10.0;
 void main() {
-    gl_FragColor = vec4(u_color, u_alpha);
+    float fog = u_fog_enabled * clamp((v_dist - FOG_START) / (FOG_END - FOG_START), 0.0, 1.0);
+    vec3 col = mix(u_color, FOG_COLOR, fog);
+    float a = mix(u_alpha, u_alpha * 0.3, fog);
+    gl_FragColor = vec4(col, a);
 }
 "#;
 
@@ -221,6 +234,8 @@ impl Scene3DRenderer {
             let u_color = gl.get_uniform_location(program, "u_color").unwrap();
             let u_point_size = gl.get_uniform_location(program, "u_point_size").unwrap();
             let u_alpha = gl.get_uniform_location(program, "u_alpha").unwrap();
+            let u_eye = gl.get_uniform_location(program, "u_eye").unwrap();
+            let u_fog_enabled = gl.get_uniform_location(program, "u_fog_enabled").unwrap();
 
             let vbo = gl.create_buffer().expect("Cannot create buffer");
             let vao = gl.create_vertex_array().expect("Cannot create VAO");
@@ -237,7 +252,7 @@ impl Scene3DRenderer {
             let next_texture = RenderTexture::new(&gl, 800, 600);
 
             Self {
-                gl, program, vbo, vao, u_mvp, u_color, u_point_size, u_alpha,
+                gl, program, vbo, vao, u_mvp, u_color, u_point_size, u_alpha, u_eye, u_fog_enabled,
                 displayed_texture, next_texture,
             }
         }
@@ -260,6 +275,7 @@ impl Scene3DRenderer {
         base_stations: &[BaseStation],
         show_axes: bool,
         show_grid: bool,
+        show_fog: bool,
         wand: Option<&WandViz>,
     ) -> slint::Image {
         let width = width.max(1);
@@ -292,6 +308,13 @@ impl Scene3DRenderer {
             gl.uniform_matrix_4_f32_slice(Some(&self.u_mvp), false, &mvp);
             gl.uniform_1_f32(Some(&self.u_point_size), 1.0);
             gl.uniform_1_f32(Some(&self.u_alpha), 1.0);
+
+            // Fog: pass camera eye position and toggle
+            let eye_x = distance * pitch.cos() * yaw.cos() + pan_x;
+            let eye_y = distance * pitch.cos() * yaw.sin() + pan_y;
+            let eye_z = distance * pitch.sin();
+            gl.uniform_3_f32(Some(&self.u_eye), eye_x, eye_y, eye_z);
+            gl.uniform_1_f32(Some(&self.u_fog_enabled), if show_fog { 1.0 } else { 0.0 });
 
             // Draw ground grid (clipped to active area if set)
             if show_grid {

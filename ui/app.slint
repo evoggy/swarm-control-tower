@@ -46,6 +46,7 @@ export component AppWindow inherits Window {
     in-out property <bool> show-grid: true;
     in-out property <bool> show-goto-history: true;
     in-out property <bool> auto-rotate: false;
+    in-out property <bool> show-fog: false;
     in-out property <[VizLabel]> cf-labels;
     in-out property <[VizLabel]> axis-labels;
     in-out property <[VizLabel]> grid-labels;
@@ -462,6 +463,11 @@ export component AppWindow inherits Window {
                         CheckBox {
                             text: "Auto-rotate";
                             checked <=> root.auto-rotate;
+                        }
+
+                        CheckBox {
+                            text: "Depth fog";
+                            checked <=> root.show-fog;
                         }
                     }
                 }

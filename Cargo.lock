@@ -986,6 +986,7 @@ dependencies = [
 [[package]]
 name = "crazyradio"
 version = "0.6.0"
+source = "git+https://github.com/bitcraze/crazyradio-rs.git?branch=ataffanel%2Fsniffer#7166e28dedaace9e4fae115db78eb1f4b0883436"
 dependencies = [
  "flume",
  "rusb",
