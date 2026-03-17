@@ -1,0 +1,16 @@
+[package]
+name = "swarm-control-tower"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+slint = "1.14"
+glow = "0.16"
+crazyradio = { path = "../crazyradio-rs", features = ["async"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+serde_yaml = "0.9"
+
+[build-dependencies]
+slint-build = "1.14"

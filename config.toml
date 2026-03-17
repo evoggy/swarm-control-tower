@@ -1,0 +1,7 @@
+lighthouse_geometry = "Lighthouse_Cage.yaml"
+
+[active_area]
+min_x = -1.36
+max_x = 1.72
+min_y = -1.66
+max_y = 1.35
