@@ -42,13 +42,21 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 
 Then unplug and replug the Crazyradio dongle.
 
-### 3. Build
+
+### 3. Crazyradio firmware
+
+Requires [Crazyradio 2.0 firmware 5.4 or later](https://github.com/bitcraze/crazyradio2-firmware/releases/tag/5.4).
+
+Follow the [getting started guide](https://www.bitcraze.io/documentation/tutorials/getting-started-with-crazyradio-2-0/#enter-bootloader-mode) to flash the firmware to your Crazyradio 2.0.
+
+
+### 4. Build
 
 ```bash
 cargo build --release
 ```
 
-### 4. Run
+### 5. Run
 
 ```bash
 # Default: channel 80, 2M datarate, address E7E7E7E7E7
