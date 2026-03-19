@@ -173,12 +173,10 @@ struct BroadcastCmd {
 fn main() {
     let radio_config = parse_args();
 
-    // Load config
-    let cfg = config::load_config("config.toml");
-    let active_area = cfg.active_area;
-    let base_stations = cfg.lighthouse_geometry.as_ref().map(|path| {
-        config::load_lighthouse_geometry(path, std::path::Path::new("."))
-    }).unwrap_or_default();
+    // Bounds and lighthouse path supplied by build.rs (repo-specific)
+    let active_area = Some(config::settings_active_area());
+    let base_stations = config::load_lighthouse_geometry(
+        env!("LIGHTHOUSE_YAML"), std::path::Path::new("."));
 
     slint::BackendSelector::new()
         .require_opengl_es()

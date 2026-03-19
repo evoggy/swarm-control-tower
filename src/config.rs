@@ -1,13 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-#[derive(serde::Deserialize)]
-pub struct Config {
-    pub lighthouse_geometry: Option<String>,
-    pub active_area: Option<ActiveArea>,
-}
-
-#[derive(serde::Deserialize, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct ActiveArea {
     pub min_x: f32,
     pub max_x: f32,
@@ -20,19 +14,13 @@ pub struct BaseStation {
     pub origin: [f32; 3],
 }
 
-pub fn load_config(path: &str) -> Config {
-    match std::fs::read_to_string(path) {
-        Ok(text) => match toml::from_str(&text) {
-            Ok(config) => config,
-            Err(e) => {
-                eprintln!("Failed to parse {}: {}", path, e);
-                Config { lighthouse_geometry: None, active_area: None }
-            }
-        },
-        Err(e) => {
-            eprintln!("No config file at {}: {}", path, e);
-            Config { lighthouse_geometry: None, active_area: None }
-        }
+/// Active area bounds parsed from settings.h at build time.
+pub fn settings_active_area() -> ActiveArea {
+    ActiveArea {
+        min_x: env!("SETTINGS_MIN_X_BOUND").parse().expect("invalid MIN_X_BOUND"),
+        max_x: env!("SETTINGS_MAX_X_BOUND").parse().expect("invalid MAX_X_BOUND"),
+        min_y: env!("SETTINGS_MIN_Y_BOUND").parse().expect("invalid MIN_Y_BOUND"),
+        max_y: env!("SETTINGS_MAX_Y_BOUND").parse().expect("invalid MAX_Y_BOUND"),
     }
 }
 
@@ -51,7 +39,6 @@ pub fn load_lighthouse_geometry(yaml_path: &str, config_dir: &Path) -> Vec<BaseS
         }
     };
 
-    // Parse just the geos section
     #[derive(serde::Deserialize)]
     struct GeoEntry {
         origin: [f64; 3],
