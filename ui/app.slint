@@ -57,6 +57,7 @@ export component AppWindow inherits Window {
     // Status
     in-out property <string> radio-status: "Disconnected";
     in-out property <int> desired-flying: 0;
+    in-out property <int> max-wand-grasped: 255;
     in-out property <bool> force-takeoff: false;
     in-out property <[CopterInfo]> copters;
 
@@ -65,6 +66,10 @@ export component AppWindow inherits Window {
     callback request-less();
     callback request-all();
     callback request-none();
+    callback request-more-wand();
+    callback request-less-wand();
+    callback request-all-wand();
+    callback request-none-wand();
     callback clear-trail(int);
 
     HorizontalLayout {
@@ -124,6 +129,47 @@ export component AppWindow inherits Window {
                 CheckBox {
                     text: "Force takeoff (low battery)";
                     checked <=> root.force-takeoff;
+                }
+
+                HorizontalLayout {
+                    Text {
+                        text: "Max Wand Grasped";
+                        font-size: 12px;
+                        font-weight: 600;
+                        color: Palette.foreground;
+                        horizontal-stretch: 1;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: root.max-wand-grasped == 255 ? "All" : root.max-wand-grasped + "";
+                        font-size: 11px;
+                        color: Palette.foreground.transparentize(0.4);
+                        vertical-alignment: center;
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 4px;
+                    Button {
+                        text: "+";
+                        horizontal-stretch: 1;
+                        clicked => { root.request-more-wand(); }
+                    }
+                    Button {
+                        text: "-";
+                        horizontal-stretch: 1;
+                        clicked => { root.request-less-wand(); }
+                    }
+                    Button {
+                        text: "All";
+                        horizontal-stretch: 1;
+                        clicked => { root.request-all-wand(); }
+                    }
+                    Button {
+                        text: "None";
+                        horizontal-stretch: 1;
+                        clicked => { root.request-none-wand(); }
+                    }
                 }
 
                 Rectangle {

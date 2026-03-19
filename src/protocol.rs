@@ -143,13 +143,14 @@ pub struct CopterFullState {
     pub goto_y: f32,
     pub goto_z: f32,
     pub desired_flying: u8,
+    pub max_wand_grasped: u8,
 }
 
-/// Build a P2P broadcast packet to set desiredFlyingCopters.
+/// Build a P2P broadcast packet to set desiredFlyingCopters and maxWandGrasped.
 ///
 /// Format matches real firmware: [0xFF, 0x80|P2P_PORT, copter_message_t(44 bytes)]
 /// copter_message_t is naturally aligned (no packed attribute).
-pub fn build_control_packet(desired_flying: u8, force_takeoff: bool) -> Vec<u8> {
+pub fn build_control_packet(desired_flying: u8, force_takeoff: bool, max_wand_grasped: u8) -> Vec<u8> {
     let mut pkt = Vec::with_capacity(46);
 
     // ESB P2P header: 0xFF = CRTP P2P marker, 0x80 = P2P flag on port byte
@@ -179,8 +180,8 @@ pub fn build_control_packet(desired_flying: u8, force_takeoff: bool) -> Vec<u8> 
     pkt.push(desired_flying);
     // forceTakeoff (u8)
     pkt.push(if force_takeoff { 1 } else { 0 });
-    // padding (1 byte for alignment before magicNumber)
-    pkt.push(0);
+    // maxWandGrasped (u8)
+    pkt.push(max_wand_grasped);
     // magicNumber (u32)
     pkt.extend_from_slice(&MAGIC_NUMBER.to_le_bytes());
 
@@ -254,15 +255,18 @@ pub fn parse_sniffer_payload(payload: &[u8]) -> Option<CopterFullState> {
     // goto_position present if message has at least 32 bytes of copter_full_state_t
     let has_goto = msg_data.len() >= 32;
 
-    // desiredFlyingCopters offset depends on alignment:
-    //   Aligned (44-byte msg): offset 37 (magic at 40, 2 bytes padding between)
-    //   Packed  (30-byte msg): offset 25 (magic at 26, no padding)
-    let desired_flying = if has_goto {
-        // Naturally aligned: desiredFlyingCopters at fixed offset 37
-        if msg_data.len() > 37 { msg_data[37] } else { 0 }
+    // desiredFlyingCopters and maxWandGrasped offsets depend on alignment:
+    //   Aligned (44-byte msg): desiredFlyingCopters=37, forceTakeoff=38, maxWandGrasped=39, magic=40
+    //   Packed  (30-byte msg): desiredFlyingCopters=25, magic=26 (no forceTakeoff/maxWandGrasped)
+    let (desired_flying, max_wand_grasped) = if has_goto {
+        // Naturally aligned
+        let d = if msg_data.len() > 37 { msg_data[37] } else { 0 };
+        let m = if msg_data.len() > 39 { msg_data[39] } else { 255 };
+        (d, m)
     } else {
-        // Packed: desiredFlyingCopters at fixed offset 25
-        if msg_data.len() > 25 { msg_data[25] } else { 0 }
+        // Packed: no maxWandGrasped field, default to unlimited
+        let d = if msg_data.len() > 25 { msg_data[25] } else { 0 };
+        (d, 255u8)
     };
 
     Some(CopterFullState {
@@ -278,6 +282,7 @@ pub fn parse_sniffer_payload(payload: &[u8]) -> Option<CopterFullState> {
         goto_y: if has_goto { f32::from_le_bytes([msg_data[24], msg_data[25], msg_data[26], msg_data[27]]) } else { 0.0 },
         goto_z: if has_goto { f32::from_le_bytes([msg_data[28], msg_data[29], msg_data[30], msg_data[31]]) } else { 0.0 },
         desired_flying,
+        max_wand_grasped,
     })
 }
 
