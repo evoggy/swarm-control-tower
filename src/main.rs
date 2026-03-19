@@ -130,6 +130,7 @@ impl Default for CopterData {
                 goto_y: 0.0,
                 goto_z: 0.0,
                 desired_flying: 0,
+                max_wand_grasped: 255,
             },
             last_seen: Instant::now() - std::time::Duration::from_secs(10),
             rssi_dbm: -100,
@@ -166,6 +167,7 @@ type SharedCopterState = Arc<Mutex<SharedState>>;
 struct BroadcastCmd {
     desired_flying: u8,
     force_takeoff: bool,
+    max_wand_grasped: u8,
 }
 
 fn main() {
@@ -209,7 +211,7 @@ fn main() {
                 let current = app.get_desired_flying() as u8;
                 let new = current.saturating_add(1).min(MAX_COPTERS as u8);
                 eprintln!("[UI] More: {} -> {}", current, new);
-                let _ = tx.send(BroadcastCmd { desired_flying: new, force_takeoff: app.get_force_takeoff() });
+                let _ = tx.send(BroadcastCmd { desired_flying: new, force_takeoff: app.get_force_takeoff(), max_wand_grasped: app.get_max_wand_grasped() as u8 });
             }
         });
     }
@@ -221,7 +223,7 @@ fn main() {
                 let current = app.get_desired_flying() as u8;
                 let new = current.saturating_sub(1);
                 eprintln!("[UI] Less: {} -> {}", current, new);
-                let _ = tx.send(BroadcastCmd { desired_flying: new, force_takeoff: app.get_force_takeoff() });
+                let _ = tx.send(BroadcastCmd { desired_flying: new, force_takeoff: app.get_force_takeoff(), max_wand_grasped: app.get_max_wand_grasped() as u8 });
             }
         });
     }
@@ -229,18 +231,66 @@ fn main() {
         let tx = cmd_tx.clone();
         let app_ref = app.as_weak();
         app.on_request_all(move || {
-            let force = app_ref.upgrade().map(|a| a.get_force_takeoff()).unwrap_or(false);
-            eprintln!("[UI] All: {}", MAX_COPTERS);
-            let _ = tx.send(BroadcastCmd { desired_flying: MAX_COPTERS as u8, force_takeoff: force });
+            if let Some(app) = app_ref.upgrade() {
+                eprintln!("[UI] All: {}", MAX_COPTERS);
+                let _ = tx.send(BroadcastCmd { desired_flying: MAX_COPTERS as u8, force_takeoff: app.get_force_takeoff(), max_wand_grasped: app.get_max_wand_grasped() as u8 });
+            }
         });
     }
     {
         let tx = cmd_tx.clone();
         let app_ref = app.as_weak();
         app.on_request_none(move || {
-            let force = app_ref.upgrade().map(|a| a.get_force_takeoff()).unwrap_or(false);
-            eprintln!("[UI] None: 0");
-            let _ = tx.send(BroadcastCmd { desired_flying: 0, force_takeoff: force });
+            if let Some(app) = app_ref.upgrade() {
+                eprintln!("[UI] None: 0");
+                let _ = tx.send(BroadcastCmd { desired_flying: 0, force_takeoff: app.get_force_takeoff(), max_wand_grasped: app.get_max_wand_grasped() as u8 });
+            }
+        });
+    }
+
+    // Wire up max wand grasped buttons
+    {
+        let tx = cmd_tx.clone();
+        let app_ref = app.as_weak();
+        app.on_request_more_wand(move || {
+            if let Some(app) = app_ref.upgrade() {
+                let current = app.get_max_wand_grasped() as u8;
+                let new = if current == 255 { 255 } else { current.saturating_add(1) };
+                eprintln!("[UI] WandMore: {} -> {}", current, new);
+                let _ = tx.send(BroadcastCmd { desired_flying: app.get_desired_flying() as u8, force_takeoff: app.get_force_takeoff(), max_wand_grasped: new });
+            }
+        });
+    }
+    {
+        let tx = cmd_tx.clone();
+        let app_ref = app.as_weak();
+        app.on_request_less_wand(move || {
+            if let Some(app) = app_ref.upgrade() {
+                let current = app.get_max_wand_grasped() as u8;
+                let new = if current == 255 { 10 } else { current.saturating_sub(1) };
+                eprintln!("[UI] WandLess: {} -> {}", current, new);
+                let _ = tx.send(BroadcastCmd { desired_flying: app.get_desired_flying() as u8, force_takeoff: app.get_force_takeoff(), max_wand_grasped: new });
+            }
+        });
+    }
+    {
+        let tx = cmd_tx.clone();
+        let app_ref = app.as_weak();
+        app.on_request_all_wand(move || {
+            if let Some(app) = app_ref.upgrade() {
+                eprintln!("[UI] WandAll: 255");
+                let _ = tx.send(BroadcastCmd { desired_flying: app.get_desired_flying() as u8, force_takeoff: app.get_force_takeoff(), max_wand_grasped: 255 });
+            }
+        });
+    }
+    {
+        let tx = cmd_tx.clone();
+        let app_ref = app.as_weak();
+        app.on_request_none_wand(move || {
+            if let Some(app) = app_ref.upgrade() {
+                eprintln!("[UI] WandNone: 0");
+                let _ = tx.send(BroadcastCmd { desired_flying: app.get_desired_flying() as u8, force_takeoff: app.get_force_takeoff(), max_wand_grasped: 0 });
+            }
         });
     }
 
@@ -577,12 +627,13 @@ fn main() {
                             model.remove(model.row_count() - 1);
                         }
                     }
-                    // Extract desired_flying from any alive copter
-                    let desired = copters.iter()
-                        .find(|cd| now.duration_since(cd.last_seen).as_millis() < ALIVE_TIMEOUT_MS as u128)
-                        .map(|cd| cd.state.desired_flying)
-                        .unwrap_or(0);
+                    // Extract desired_flying and max_wand_grasped from any alive copter
+                    let alive_copter = copters.iter()
+                        .find(|cd| now.duration_since(cd.last_seen).as_millis() < ALIVE_TIMEOUT_MS as u128);
+                    let desired = alive_copter.map(|cd| cd.state.desired_flying).unwrap_or(0);
+                    let max_wand = alive_copter.map(|cd| cd.state.max_wand_grasped).unwrap_or(255);
                     app.set_desired_flying(desired as i32);
+                    app.set_max_wand_grasped(max_wand as i32);
 
                     app.set_radio_status(if radio_connected {
                         "Receiving".into()
@@ -730,7 +781,7 @@ async fn run_sniffer(
                 }
             }
             Some(cmd) = cmd_rx.recv() => {
-                let packet = protocol::build_control_packet(cmd.desired_flying, cmd.force_takeoff);
+                let packet = protocol::build_control_packet(cmd.desired_flying, cmd.force_takeoff, cmd.max_wand_grasped);
                 eprintln!("Broadcasting desired_flying={} force_takeoff={} len:{} data:{:02X?}",
                     cmd.desired_flying, cmd.force_takeoff, packet.len(), &packet);
                 // Send burst for reliability (10 packets over ~1s)
