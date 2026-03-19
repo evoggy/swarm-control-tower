@@ -7,7 +7,7 @@ use std::time::Instant;
 
 use protocol::{CopterFullState, CopterState, WandState, ALIVE_TIMEOUT_MS, MAX_COPTERS, WAND_TIMEOUT_MS};
 use renderer::{Scene3DRenderer, TrailSegment, UnitPos, WandViz};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 
 slint::include_modules!();
@@ -306,10 +306,11 @@ fn main() {
     }
 
     // Start radio sniffer thread
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let radio_state = shared_state.clone();
-    std::thread::spawn(move || {
+    let radio_thread = std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(radio_sniffer_task(radio_state, radio_config, cmd_rx));
+        rt.block_on(radio_sniffer_task(radio_state, radio_config, cmd_rx, shutdown_rx));
     });
 
     // Set up rendering notifier
@@ -656,26 +657,45 @@ fn main() {
         .expect("Failed to set rendering notifier");
 
     app.run().unwrap();
+
+    // Signal the radio task to stop and wait for it to exit sniffer mode cleanly
+    let _ = shutdown_tx.send(true);
+    radio_thread.join().ok();
 }
 
-async fn radio_sniffer_task(state: SharedCopterState, config: RadioConfig, mut cmd_rx: mpsc::UnboundedReceiver<BroadcastCmd>) {
+async fn radio_sniffer_task(
+    state: SharedCopterState,
+    config: RadioConfig,
+    mut cmd_rx: mpsc::UnboundedReceiver<BroadcastCmd>,
+    mut shutdown: watch::Receiver<bool>,
+) {
     loop {
+        if *shutdown.borrow() { break; }
+
         eprintln!("Opening Crazyradio #{}...", config.radio_index);
         let cr = match crazyradio::Crazyradio::open_nth_async(config.radio_index).await {
             Ok(cr) => cr,
             Err(e) => {
                 eprintln!("Failed to open Crazyradio: {:?}. Retrying in 2s...", e);
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                tokio::select! {
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(2)) => {}
+                    _ = shutdown.changed() => break,
+                }
                 continue;
             }
         };
 
-        if let Err(e) = run_sniffer(cr, &state, &config, &mut cmd_rx).await {
+        let res = run_sniffer(cr, &state, &config, &mut cmd_rx, &mut shutdown).await;
+        state.lock().unwrap().radio_connected = false;
+        if let Err(e) = res {
             eprintln!("Sniffer error: {:?}. Reconnecting in 2s...", e);
-            state.lock().unwrap().radio_connected = false;
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            tokio::select! {
+                _ = tokio::time::sleep(std::time::Duration::from_secs(2)) => {}
+                _ = shutdown.changed() => break,
+            }
         }
     }
+    eprintln!("Radio task stopped.");
 }
 
 async fn run_sniffer(
@@ -683,6 +703,7 @@ async fn run_sniffer(
     state: &SharedCopterState,
     config: &RadioConfig,
     cmd_rx: &mut mpsc::UnboundedReceiver<BroadcastCmd>,
+    shutdown: &mut watch::Receiver<bool>,
 ) -> Result<(), crazyradio::Error> {
     cr.set_channel(crazyradio::Channel::from_number(config.channel)?)?;
     cr.set_datarate(config.datarate)?;
@@ -699,15 +720,14 @@ async fn run_sniffer(
     );
     let (receiver, sender) = cr.enter_sniffer_mode_async().await?;
 
-    {
-        state.lock().unwrap().radio_connected = true;
-    }
+    state.lock().unwrap().radio_connected = true;
     eprintln!("Sniffer mode active. Listening for swarm broadcasts...");
 
     let mut pkt_count: u64 = 0;
     let mut parsed_count: u64 = 0;
+    let mut result: Result<(), crazyradio::Error> = Ok(());
 
-    loop {
+    'sniffer: loop {
         tokio::select! {
             pkt_result = receiver.recv() => {
                 match pkt_result {
@@ -770,11 +790,11 @@ async fn run_sniffer(
                         }
                     }
                     Some(Err(e)) => {
-                        return Err(e);
+                        result = Err(e);
+                        break 'sniffer;
                     }
                     None => {
-                        eprintln!("Sniffer session ended");
-                        return Ok(());
+                        break 'sniffer;
                     }
                 }
             }
@@ -792,6 +812,17 @@ async fn run_sniffer(
                 }
                 eprintln!("Broadcast burst complete");
             }
+            _ = shutdown.changed() => {
+                break 'sniffer;
+            }
         }
     }
+
+    // Explicitly close so the RX thread calls exit_sniffer_mode() before we return.
+    // Dropping receiver without closing races against process exit.
+    drop(sender);
+    let _ = receiver.close().await;
+    eprintln!("Sniffer mode exited.");
+
+    result
 }
