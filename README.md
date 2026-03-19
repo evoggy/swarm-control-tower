@@ -20,20 +20,42 @@ A real-time 3D visualization and control application for [Crazyflie](https://www
 - OpenGL ES 2.0 capable system
 - USB permissions for the Crazyradio (on Linux, udev rules)
 
-## Building
+## Setup
+
+### 1. Install Rust
+
+If you don't have Rust installed:
+
+```bash
+curl --proto '=https' --tlsv8 -sSf https://sh.rustup.rs | sh
+source ~/.cargo/env
+```
+
+### 2. USB permissions (Linux)
+
+Allow your user to access the Crazyradio without root. You only need to do this once:
+
+```bash
+echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="1915", ATTRS{idProduct}=="7777", MODE="0664", GROUP="plugdev"' | sudo tee /etc/udev/rules.d/99-crazyradio.rules
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+Then unplug and replug the Crazyradio dongle.
+
+### 3. Build
 
 ```bash
 cargo build --release
 ```
 
-## Usage
+### 4. Run
 
 ```bash
 # Default: channel 80, 2M datarate, address E7E7E7E7E7
-swarm-control-tower
+cargo run --release
 
 # Custom radio settings
-swarm-control-tower --radio 0 --channel 100 --datarate 1M --address ffe7e7e7e7
+cargo run --release -- --radio 0 --channel 90 --address FFE7E7E7E7
 ```
 
 ### Command-line options
