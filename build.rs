@@ -11,11 +11,7 @@ fn main() {
 
     let config: toml::Value = toml::from_str(&text).expect("Failed to parse config.toml");
 
-    let lighthouse = config
-        .get("lighthouse_geometry")
-        .and_then(|v| v.as_str())
-        .unwrap_or("Lighthouse_Cage.yaml");
-    println!("cargo:rustc-env=LIGHTHOUSE_YAML={}", lighthouse);
+    println!("cargo:rustc-env=LIGHTHOUSE_DIR=.");
 
     let area = config.get("active_area").expect("Missing [active_area] in config.toml");
     for (toml_key, env_key) in &[
